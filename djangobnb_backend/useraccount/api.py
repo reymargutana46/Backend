@@ -14,7 +14,6 @@ def landlord_detail(request, pk):
 
     serializer = UserDetailSerializer(user, many=False)
 
-<<<<<<< HEAD
     return JsonResponse(serializer.data, safe=False)
 
 
@@ -26,8 +25,6 @@ def reservation_list(request):
     print(reservations)
     
     serializer = ReservationsListSerializer(reservations, many=True)
-=======
->>>>>>> 45aaddc (Book property and Land lord page dynamic - Gutana, Reymar C.)
     return JsonResponse(serializer.data, safe=False)
 
 

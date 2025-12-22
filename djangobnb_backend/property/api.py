@@ -2,12 +2,33 @@ from tracemalloc import start
 from django.http import JsonResponse
 
 from rest_framework.decorators import api_view, authentication_classes, permission_classes
-from rest_framework_simplejwt.token import AccessToken
+from rest_framework_simplejwt.tokens import AccessToken
 from .forms import PropertyForm
 from .models import Property, Reservation
 from .serializers import PropertiesListSerializer, PropertyDetailSerializer, ReservationsListSerializer
 from useraccount.models import User
 
+
+def _get_request_user(request):
+    """Resolve the authenticated user from JWT header or request."""
+    auth_header = request.META.get('HTTP_AUTHORIZATION', '')
+
+    if auth_header.startswith('Bearer '):
+        token_str = auth_header.split('Bearer ')[1].strip()
+
+        try:
+            token = AccessToken(token_str)
+            user_id = token.payload.get('user_id')
+
+            if user_id:
+                return User.objects.get(pk=user_id)
+        except Exception:
+            pass
+
+    if getattr(request, 'user', None) and request.user.is_authenticated:
+        return request.user
+
+    return None
 
 
 @api_view(['GET'])
@@ -17,13 +38,7 @@ def properties_list(request):
     #
     #Auth
 
-    try:
-        token = request.META['HTTP_AUTHORIZATION'].split('Bearer ')[1]
-        token = AccessToken(token)
-        user_id = token.payload['user_id']
-        user = User.objects.get(pk=user_id)
-    except Exception as e:
-        user = None
+    user = _get_request_user(request)
 
     print('user', user)
 
@@ -35,21 +50,33 @@ def properties_list(request):
     #
     #Filter
 
-    is_favorites = request.GET.get('is_favorites', '')
+    favorites_param = request.GET.get('favorites')
+    is_favorites_param = request.GET.get('is_favorites')
+    favorites_filter = False
+
+    truthy_values = {'1', 'true', 'yes'}
+
+    if favorites_param is not None:
+        favorites_filter = str(favorites_param).lower() in truthy_values
+    elif is_favorites_param is not None:
+        favorites_filter = str(is_favorites_param).lower() in truthy_values
     landlord_id = request.GET.get('landlord_id', '')
 
     if landlord_id:
         properties = properties.filter(landlord_id=landlord_id)
     
-    if is_favorites:
-        properties = properties.filter(favorited_in={user})
+    if favorites_filter:
+        if user:
+            properties = properties.filter(favorited__in=[user]).distinct()
+        else:
+            properties = Property.objects.none()
 
     #
     #Favorites
 
     if user:
         for property in properties:
-            if user in property.favorited.all():
+            if property.favorited.filter(pk=user.pk).exists():
                 favorites.append(property.id)
 
     #
@@ -57,7 +84,7 @@ def properties_list(request):
 
     return JsonResponse({
         'data': serializer.data,
-        'favorite': favorites
+        'favorites': favorites
     })
 
 @api_view(['GET'])
@@ -126,13 +153,18 @@ def book_property(request, pk):
 
 @api_view(['POST'])
 def toggle_favorite(request, pk):
+    user = _get_request_user(request)
+
+    if not user:
+        return JsonResponse({'detail': 'Authentication credentials were not provided.'}, status=401)
+
     property = Property.objects.get(pk=pk)
 
-    if request.user in property.favorited.all():
-        property.favorited.remove(request.user)
+    if property.favorited.filter(pk=user.pk).exists():
+        property.favorited.remove(user)
 
         return JsonResponse({'is_favorite': False})
     else:
-        property.favorited.add(request.user)
+        property.favorited.add(user)
 
         return JsonResponse({'is_favorite': True})
