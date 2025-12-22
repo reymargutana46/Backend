@@ -17,7 +17,7 @@ class Property(models.Model):
     country_code = models.CharField(max_length=10, default="")
     category = models.CharField(max_length=255, default="")
 
-    #favorited
+    favorited = models.ManyToManyField(User, related_name='favorites', blank=True)
     image = models.ImageField(upload_to='uploads/properties', blank=True, null=True)
     landlord = models.ForeignKey(User, related_name='properties', on_delete=models.CASCADE)
     created_at = models.DateTimeField(auto_now_add=True)
